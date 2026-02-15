@@ -27,7 +27,22 @@ For statistical analysis, use calculate_statistics or detect_anomalies on the fe
 For general coverage questions, use get_data_coverage.
 
 Always provide clear, concise summaries of the results. Include units in your response.
+
+CRITICAL FORMATTING RULES:
+- Your response goes directly to the end user in a chat interface.
+- NEVER include XML tags, tool calls, function calls, or any internal markup in your response.
+- NEVER show <tool_call>, <function_calls>, <invoke>, <parameter>, or similar tags.
+- NEVER expose internal function names, JSON parameters, or raw data structures.
+- Write only clean, natural language that a non-technical user can understand.
 """
+
+SUMMARY_SYSTEM_PROMPT = """You are summarizing ocean data query results for a chat user.
+Write a clear, natural language summary of the data. Include key statistics with units.
+
+CRITICAL: Your response goes directly to the end user. Write ONLY clean natural language.
+Do NOT include any XML tags, tool calls, function invocations, code blocks with raw data,
+or internal markup. Never mention tool names or function names. Just describe the findings
+in plain English as a helpful oceanography expert would."""
 
 QUERY_TOOLS = [
     query_ocean_data,
@@ -83,16 +98,19 @@ class QueryAgent:
             from langchain_core.messages import HumanMessage
 
             summary_prompt = (
-                f"Here are the tool results. Summarize them clearly for the user:\n\n"
+                f"Here are the data results to summarize for the user. "
+                f"Write a clear natural language summary with key statistics and units. "
+                f"Do NOT include any XML, tool calls, or raw data structures.\n\n"
                 f"{tool_results}"
             )
+            summary_system = SystemMessage(content=SUMMARY_SYSTEM_PROMPT)
             summary_llm = ChatAnthropic(
                 model=self._settings.anthropic_model,
                 api_key=self._settings.anthropic_api_key,
                 max_tokens=2048,
             )
             summary_response = await summary_llm.ainvoke([
-                system_msg,
+                summary_system,
                 *messages,
                 HumanMessage(content=summary_prompt),
             ])

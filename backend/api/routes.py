@@ -11,10 +11,20 @@ from langchain_core.messages import HumanMessage
 from sse_starlette.sse import EventSourceResponse
 
 from backend.agents.state import AgentState
+from backend.api.sanitizer import sanitize_response
 from backend.api.session import SessionStore
 from backend.data.schema import ChatRequest, ChatResponse, ErrorResponse, Message
 
 logger = logging.getLogger(__name__)
+
+# Map internal agent names to user-friendly loading labels
+_AGENT_STATUS_LABELS: dict[str, str] = {
+    "supervisor": "Understanding your question...",
+    "rag_agent": "Searching knowledge base...",
+    "query_agent": "Fetching ocean data...",
+    "viz_agent": "Generating visualization...",
+    "clarify": "Processing...",
+}
 
 router = APIRouter(prefix="/api/v1")
 
@@ -71,12 +81,12 @@ async def chat_message(request: ChatRequest) -> ChatResponse:
         logger.error("Agent pipeline error: %s", e)
         raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
 
-    # Extract response content
+    # Extract response content and sanitize
     messages = result.get("messages", [])
     content = ""
     if messages:
         last_msg = messages[-1]
-        content = getattr(last_msg, "content", str(last_msg))
+        content = sanitize_response(getattr(last_msg, "content", str(last_msg)))
 
     visualization = result.get("visualization")
     if visualization and not visualization.get("plotly_json"):
@@ -128,19 +138,20 @@ async def chat_stream(
         }
 
         try:
-            yield {"event": "status", "data": json.dumps({"agent": "supervisor", "action": "classifying intent"})}
+            yield {"event": "status", "data": json.dumps({"agent": "supervisor", "action": "Understanding your question..."})}
 
             result = await _graph.ainvoke(state)
 
             agent_path = result.get("metadata", {}).get("agent_path", [])
             if len(agent_path) > 1:
-                yield {"event": "status", "data": json.dumps({"agent": agent_path[-1], "action": "processing"})}
+                friendly = _AGENT_STATUS_LABELS.get(agent_path[-1], "Processing...")
+                yield {"event": "status", "data": json.dumps({"agent": agent_path[-1], "action": friendly})}
 
             # Stream the content token by token (simulated for non-streaming LLM)
             messages = result.get("messages", [])
             content = ""
             if messages:
-                content = getattr(messages[-1], "content", str(messages[-1]))
+                content = sanitize_response(getattr(messages[-1], "content", str(messages[-1])))
 
             # Send content in chunks
             chunk_size = 20

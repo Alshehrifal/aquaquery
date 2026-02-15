@@ -20,6 +20,12 @@ say so and provide what you can based on your general knowledge of oceanography.
 
 Always cite which source documents informed your answer.
 
+CRITICAL FORMATTING RULES:
+- Your response goes directly to the end user in a chat interface.
+- NEVER include XML tags, tool calls, function calls, or any internal markup.
+- NEVER show <tool_call>, <function_calls>, <invoke>, or similar tags.
+- Write only clean, natural language.
+
 Retrieved context:
 {context}
 """

@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { sanitizeContent } from '../services/sanitize';
 import type { ChatMessage } from '../types';
 import { DataVisualization } from './DataVisualization';
 
@@ -9,6 +11,10 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  const cleanContent = useMemo(
+    () => (isUser ? message.content : sanitizeContent(message.content)),
+    [isUser, message.content],
+  );
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
@@ -20,12 +26,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         }`}
       >
         {isUser ? (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap">{cleanContent}</p>
         ) : (
           <>
             <div className="prose prose-sm max-w-none prose-headings:text-slate-800 prose-p:text-slate-700 prose-a:text-[var(--ocean-mid)]">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content}
+                {cleanContent}
               </ReactMarkdown>
             </div>
 

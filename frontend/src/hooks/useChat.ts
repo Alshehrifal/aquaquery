@@ -1,6 +1,15 @@
 import { useCallback, useRef, useState } from 'react';
 import { sendMessage, streamMessage } from '../services/api';
+import { sanitizeContent } from '../services/sanitize';
 import type { ChatMessage, Visualization } from '../types';
+
+const AGENT_LABELS: Record<string, string> = {
+  supervisor: 'Understanding your question...',
+  rag_agent: 'Searching knowledge base...',
+  query_agent: 'Fetching ocean data...',
+  viz_agent: 'Generating visualization...',
+  clarify: 'Processing...',
+};
 
 interface UseChatReturn {
   messages: readonly ChatMessage[];
@@ -53,14 +62,16 @@ export function useChat(sessionId: string, useStreaming = true): UseChatReturn {
         ]);
 
         closeRef.current = streamMessage(sessionId, message, {
-          onStatus: (_agent, action) => {
-            setStatusText(action);
+          onStatus: (agent, action) => {
+            const friendly = AGENT_LABELS[agent] ?? action;
+            setStatusText(friendly);
           },
           onToken: (content) => {
             accumulatedContent += content;
+            const cleaned = sanitizeContent(accumulatedContent);
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, content: accumulatedContent } : m,
+                m.id === assistantId ? { ...m, content: cleaned } : m,
               ),
             );
           },
