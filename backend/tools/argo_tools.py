@@ -55,6 +55,10 @@ def query_ocean_data(
     Returns:
         Dict with query results including profiles, statistics, and metadata.
     """
+    logger.info(
+        "query_ocean_data called: variable=%s, lat=[%s,%s], lon=[%s,%s], depth=[%s,%s]",
+        variable, lat_min, lat_max, lon_min, lon_max, depth_min, depth_max,
+    )
     valid_vars = {"TEMP", "PSAL", "PRES", "DOXY"}
     if variable.upper() not in valid_vars:
         return {
@@ -130,6 +134,7 @@ def get_data_coverage() -> dict[str, Any]:
 
     Returns lat/lon/time bounds, available variables, and total profile count.
     """
+    logger.info("get_data_coverage called")
     loader = _get_loader()
     meta = loader.get_metadata()
     variables = loader.get_available_variables()

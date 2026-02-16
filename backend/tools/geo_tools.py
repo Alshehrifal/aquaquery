@@ -53,6 +53,7 @@ def get_nearest_profiles(
     Returns:
         Dict with nearby profiles and their distances.
     """
+    logger.info("get_nearest_profiles called: lat=%s, lon=%s, radius_km=%s", lat, lon, radius_km)
     # Define a bounding box from the radius (approximate)
     lat_delta = radius_km / 111.0  # ~111 km per degree latitude
     lon_delta = radius_km / (111.0 * max(np.cos(np.radians(lat)), 0.01))
@@ -119,6 +120,7 @@ def ocean_basin_bounds(basin: str) -> dict[str, Any]:
     Returns:
         Dict with lat_min, lat_max, lon_min, lon_max for the basin.
     """
+    logger.info("ocean_basin_bounds called: basin=%s", basin)
     basin_key = basin.lower().strip().replace(" ", "_")
 
     if basin_key not in OCEAN_BASINS:

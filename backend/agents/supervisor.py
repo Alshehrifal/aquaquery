@@ -40,14 +40,22 @@ def classify_intent(
 
     valid_intents = {"info", "data", "viz", "clarify"}
     if intent not in valid_intents:
-        # Fallback heuristic
+        # Fallback heuristic -- check data keywords first (more specific)
         lower_msg = message.lower()
-        if any(w in lower_msg for w in ["plot", "chart", "graph", "show", "map", "visualiz"]):
-            return "viz"
-        if any(w in lower_msg for w in ["what is", "explain", "tell me about", "describe", "how"]):
-            return "info"
-        if any(w in lower_msg for w in ["temperature", "salinity", "depth", "data", "average", "mean"]):
+        words = lower_msg.split()
+        if any(w in lower_msg for w in [
+            "temperature", "salinity", "depth", "pressure", "oxygen",
+            "average", "mean", "compare", "data",
+        ]):
             return "data"
+        if any(w in lower_msg for w in ["plot", "chart", "graph", "map", "visualiz"]):
+            return "viz"
+        if "show" in words:
+            return "data"
+        if any(w in lower_msg for w in ["what is", "explain", "tell me about", "describe"]):
+            return "info"
+        if "how" in words:
+            return "info"
         return "clarify"
 
     return intent
