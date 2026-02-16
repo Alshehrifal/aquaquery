@@ -51,6 +51,25 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
+### 5. Pre-cache Argo data (recommended)
+
+First-time queries fetch data from remote GDAC servers and can take minutes. Pre-download data to make queries fast:
+
+```bash
+source .venv/bin/activate
+
+# Cache last 90 days for all basins (takes a while)
+python -m backend.scripts.precache_argo
+
+# Or cache specific basins only
+python -m backend.scripts.precache_argo --basins north_atlantic mediterranean
+
+# Or a shorter time window
+python -m backend.scripts.precache_argo --recent-days 30
+```
+
+Cached data is stored in `data/sample/` as NetCDF files. Subsequent queries that fall within the cached region and time window will be served locally.
+
 ---
 
 ## What You Can Ask
@@ -289,6 +308,7 @@ pytest tests/backend -v --cov=backend --cov-report=term-missing
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | -- | Anthropic API key for Claude |
 | `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Claude model ID |
+| `ARGO_FETCH_TIMEOUT` | No | `45` | Argo data fetch timeout in seconds |
 
 ### Backend settings (backend/config.py)
 
@@ -299,6 +319,7 @@ pytest tests/backend -v --cov=backend --cov-report=term-missing
 | `rate_limit_per_minute` | 10 | Max requests per IP per minute |
 | `rag_top_k` | 3 | Number of documents to retrieve |
 | `rag_min_relevance` | 0.5 | Minimum similarity threshold |
+| `argo_fetch_timeout` | 45 | Argo data fetch timeout in seconds |
 | `chroma_collection_name` | argo_knowledge | ChromaDB collection name |
 
 ---

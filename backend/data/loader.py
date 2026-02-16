@@ -1,5 +1,6 @@
 """Argo data loader using argopy library."""
 
+import concurrent.futures
 import logging
 from datetime import datetime
 from typing import Any
@@ -110,6 +111,19 @@ def _dataset_to_profiles(ds: xr.Dataset) -> list[OceanProfile]:
     return profiles
 
 
+def _fetch_xarray_with_timeout(fetcher: Any, timeout_seconds: int) -> xr.Dataset:
+    """Wrap synchronous fetcher.to_xarray() with a timeout."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(fetcher.to_xarray)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(
+                f"Data fetch timed out after {timeout_seconds}s. "
+                "Try a smaller region or time range."
+            )
+
+
 class ArgoDataLoader(DataSource):
     """Argo oceanographic data loader using argopy."""
 
@@ -153,13 +167,17 @@ class ArgoDataLoader(DataSource):
 
         logger.info("Fetching Argo data for region: %s", region)
 
+        timeout = self._settings.argo_fetch_timeout
+
         try:
             fetcher = argopy.DataFetcher(src="gdac").region(region)
-            ds = fetcher.to_xarray()
+            ds = _fetch_xarray_with_timeout(fetcher, timeout)
+        except TimeoutError:
+            raise
         except Exception:
             logger.warning("GDAC fetch failed, trying erddap source")
             fetcher = argopy.DataFetcher(src="erddap").region(region)
-            ds = fetcher.to_xarray()
+            ds = _fetch_xarray_with_timeout(fetcher, timeout)
 
         ds = _apply_qc_filter(ds)
         logger.info("Fetched %d profiles", ds.dims.get("N_PROF", 0))

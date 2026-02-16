@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # argopy settings
     argo_cache_dir: str = str(Path(__file__).parent.parent / "data" / "sample")
+    argo_fetch_timeout: int = 45  # seconds
 
     # ChromaDB settings
     chroma_collection_name: str = "argo_knowledge"

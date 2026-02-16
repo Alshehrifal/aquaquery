@@ -1,5 +1,8 @@
 """Tests for Argo data loader."""
 
+import time
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -10,6 +13,7 @@ from backend.data.loader import (
     ArgoDataLoader,
     _apply_qc_filter,
     _dataset_to_profiles,
+    _fetch_xarray_with_timeout,
 )
 from backend.data.schema import DatasetMetadata, VariableInfo
 
@@ -112,6 +116,35 @@ class TestArgoDataLoader:
         names = [v.name for v in variables]
         assert "TEMP" in names
         assert "PSAL" in names
+
+
+class TestFetchXarrayWithTimeout:
+    def test_returns_result_within_timeout(self):
+        ds = _make_sample_dataset()
+        fetcher = MagicMock()
+        fetcher.to_xarray.return_value = ds
+
+        result = _fetch_xarray_with_timeout(fetcher, timeout_seconds=5)
+        assert result is ds
+        fetcher.to_xarray.assert_called_once()
+
+    def test_raises_timeout_error_on_slow_fetch(self):
+        def slow_fetch():
+            time.sleep(5)
+            return _make_sample_dataset()
+
+        fetcher = MagicMock()
+        fetcher.to_xarray.side_effect = slow_fetch
+
+        with pytest.raises(TimeoutError, match="timed out after 1s"):
+            _fetch_xarray_with_timeout(fetcher, timeout_seconds=1)
+
+    def test_propagates_fetcher_exceptions(self):
+        fetcher = MagicMock()
+        fetcher.to_xarray.side_effect = RuntimeError("network error")
+
+        with pytest.raises(RuntimeError, match="network error"):
+            _fetch_xarray_with_timeout(fetcher, timeout_seconds=5)
 
 
 class TestConstants:

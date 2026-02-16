@@ -1,10 +1,13 @@
 """Tests for LangChain tools."""
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
 
 from backend.tools.stats_tools import calculate_statistics, detect_anomalies
-from backend.tools.geo_tools import ocean_basin_bounds, _haversine_km
+from backend.tools.argo_tools import query_ocean_data
+from backend.tools.geo_tools import ocean_basin_bounds, get_nearest_profiles, _haversine_km
 
 
 class TestCalculateStatistics:
@@ -115,6 +118,44 @@ class TestOceanBasinBounds:
         for basin_name in OCEAN_BASINS:
             result = ocean_basin_bounds.invoke({"basin": basin_name})
             assert result["success"] is True
+
+
+class TestQueryOceanDataTimeout:
+    @patch("backend.tools.argo_tools._get_loader")
+    def test_returns_error_dict_on_timeout(self, mock_get_loader):
+        mock_loader = MagicMock()
+        mock_loader.fetch_region.side_effect = TimeoutError(
+            "Data fetch timed out after 45s. Try a smaller region or time range."
+        )
+        mock_get_loader.return_value = mock_loader
+
+        result = query_ocean_data.invoke({"variable": "TEMP"})
+        assert result["success"] is False
+        assert "timed out" in result["error"]
+
+    @patch("backend.tools.argo_tools._get_loader")
+    def test_generic_exception_still_handled(self, mock_get_loader):
+        mock_loader = MagicMock()
+        mock_loader.fetch_region.side_effect = RuntimeError("connection lost")
+        mock_get_loader.return_value = mock_loader
+
+        result = query_ocean_data.invoke({"variable": "TEMP"})
+        assert result["success"] is False
+        assert "connection lost" in result["error"]
+
+
+class TestGetNearestProfilesTimeout:
+    @patch("backend.tools.geo_tools._get_loader")
+    def test_returns_error_dict_on_timeout(self, mock_get_loader):
+        mock_loader = MagicMock()
+        mock_loader.fetch_region.side_effect = TimeoutError(
+            "Data fetch timed out after 45s. Try a smaller region or time range."
+        )
+        mock_get_loader.return_value = mock_loader
+
+        result = get_nearest_profiles.invoke({"lat": 30.0, "lon": -40.0})
+        assert result["success"] is False
+        assert "timed out" in result["error"]
 
 
 class TestHaversine:
