@@ -120,6 +120,9 @@ def query_ocean_data(
 
         return result
 
+    except TimeoutError as e:
+        logger.warning("Tool timed out: %s", e)
+        return {"error": str(e), "success": False}
     except Exception as e:
         logger.error("Error querying ocean data: %s", e)
         return {

@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -49,6 +50,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     graph = build_graph(settings=settings, indexer=indexer)
     set_graph(graph)
     logger.info("Agent pipeline initialized")
+
+    # Warn if Argo cache is empty
+    cache_dir = Path(settings.argo_cache_dir)
+    if not list(cache_dir.glob("*.nc")):
+        logger.warning(
+            "Argo cache is empty (%s). "
+            "Run 'python -m backend.scripts.precache_argo' for faster queries.",
+            cache_dir,
+        )
 
     yield
 

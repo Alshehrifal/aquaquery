@@ -100,6 +100,9 @@ def get_nearest_profiles(
             "profiles": profiles[:20],  # Limit to 20 nearest
         }
 
+    except TimeoutError as e:
+        logger.warning("Tool timed out: %s", e)
+        return {"error": str(e), "success": False}
     except Exception as e:
         logger.error("Error finding nearest profiles: %s", e)
         return {
