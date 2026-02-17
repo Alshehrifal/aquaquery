@@ -148,6 +148,75 @@ def generate_bar_chart(
     }
 
 
+def generate_trajectory_map(
+    lats: list[float],
+    lons: list[float],
+    timestamps: list[str],
+    wmo_id: int,
+    title: str = "",
+) -> dict[str, Any]:
+    """Generate a Plotly JSON trajectory map showing a float's path."""
+    mid_lat = (lats[0] + lats[-1]) / 2
+    mid_lon = (lons[0] + lons[-1]) / 2
+
+    data = [
+        {
+            "type": "scattergeo",
+            "mode": "lines+markers",
+            "lat": lats,
+            "lon": lons,
+            "marker": {"color": "#0077b6", "size": 5},
+            "line": {"color": "#0077b6", "width": 2},
+            "text": [f"Cycle {i + 1}: {t}" for i, t in enumerate(timestamps)],
+            "name": "Trajectory",
+        },
+        {
+            "type": "scattergeo",
+            "mode": "markers",
+            "lat": [lats[0]],
+            "lon": [lons[0]],
+            "marker": {"color": "green", "size": 12, "symbol": "circle"},
+            "text": [f"Start: {timestamps[0]}"],
+            "name": "Start",
+            "showlegend": True,
+        },
+        {
+            "type": "scattergeo",
+            "mode": "markers",
+            "lat": [lats[-1]],
+            "lon": [lons[-1]],
+            "marker": {"color": "red", "size": 12, "symbol": "circle"},
+            "text": [f"End: {timestamps[-1]}"],
+            "name": "End",
+            "showlegend": True,
+        },
+    ]
+
+    display_title = title or f"Float {wmo_id} Trajectory"
+
+    return {
+        "chart_type": "trajectory_map",
+        "plotly_json": {
+            "data": data,
+            "layout": {
+                "title": display_title,
+                "geo": {
+                    "showland": True,
+                    "landcolor": "#e8e8e8",
+                    "showocean": True,
+                    "oceancolor": "#cce5ff",
+                    "projection": {"type": "natural earth"},
+                    "center": {"lat": mid_lat, "lon": mid_lon},
+                },
+                "template": "plotly_white",
+                "height": 500,
+                "showlegend": True,
+            },
+        },
+        "description": display_title,
+    }
+
+
 def generate_scatter_map(
     lats: list[float],
     lons: list[float],
@@ -204,14 +273,83 @@ class VizAgent:
         )
 
     def _infer_chart_from_data(self, data: dict[str, Any]) -> dict[str, Any] | None:
-        """Try to generate a chart directly from structured tool results."""
+        """Try to generate a chart directly from structured tool results.
+
+        Checks chart_hint first (from float tools), then falls back to
+        existing heuristics for region-based query results.
+        """
         tool_results = data.get("tool_results", {})
 
         for _tool_name, result in tool_results.items():
             if not isinstance(result, dict) or not result.get("success"):
                 continue
 
+            chart_hint = result.get("chart_hint")
             variable = result.get("variable", "Value")
+
+            # chart_hint-driven inference (float tools)
+            if chart_hint == "trajectory_map":
+                traj = result.get("trajectory", {})
+                lats = traj.get("latitudes", [])
+                lons = traj.get("longitudes", [])
+                timestamps = traj.get("timestamps", [])
+                wmo_id = result.get("wmo_id", 0)
+                if lats and lons and timestamps:
+                    return generate_trajectory_map(
+                        lats=lats,
+                        lons=lons,
+                        timestamps=timestamps,
+                        wmo_id=wmo_id,
+                    )
+                logger.warning(
+                    "trajectory_map hint present but missing data: "
+                    "lats=%d, lons=%d, timestamps=%d",
+                    len(lats), len(lons), len(timestamps),
+                )
+
+            if chart_hint == "depth_profile":
+                depths = result.get("depths", [])
+                values = result.get("values", [])
+                if depths and values:
+                    return generate_depth_profile(
+                        depths=depths,
+                        values=values,
+                        variable=variable,
+                        unit=self._get_unit(variable),
+                    )
+                logger.warning(
+                    "depth_profile hint present but missing data: "
+                    "depths=%d, values=%d",
+                    len(depths), len(values),
+                )
+
+            if chart_hint == "bar_chart":
+                comparisons = result.get("comparisons", [])
+                if comparisons:
+                    categories = ["Mean", "Median", "Min", "Max"]
+                    bar_values = []
+                    labels = []
+                    for comp in comparisons:
+                        stats = comp.get("statistics", {})
+                        if stats and "mean" in stats:
+                            bar_values.append([
+                                stats.get("mean", 0),
+                                stats.get("median", 0),
+                                stats.get("min", 0),
+                                stats.get("max", 0),
+                            ])
+                            labels.append(str(comp.get("wmo_id", "?")))
+                    if bar_values:
+                        return generate_bar_chart(
+                            categories=categories,
+                            values=bar_values,
+                            labels=labels,
+                            variable=variable,
+                            unit=self._get_unit(variable),
+                            title=f"{variable} Comparison Across Floats",
+                        )
+
+            # Existing heuristics for region-based results
             stats = result.get("statistics", {})
             sample_locs = result.get("sample_locations", [])
             values_sample = result.get("values_sample", [])

@@ -188,3 +188,124 @@ class TestToDataframe:
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
+
+
+# --- Float/Profile fetch tests ---
+
+
+def _make_float_dataset(n_prof: int = 5, n_levels: int = 4) -> xr.Dataset:
+    """Create a sample dataset with PLATFORM_NUMBER and CYCLE_NUMBER."""
+    return xr.Dataset(
+        {
+            "TEMP": (["N_PROF", "N_LEVELS"], np.random.uniform(2, 25, (n_prof, n_levels))),
+            "PSAL": (["N_PROF", "N_LEVELS"], np.random.uniform(33, 37, (n_prof, n_levels))),
+            "PRES": (["N_PROF", "N_LEVELS"], np.tile(np.linspace(10, 2000, n_levels), (n_prof, 1))),
+            "TEMP_QC": (["N_PROF", "N_LEVELS"], np.ones((n_prof, n_levels), dtype=int)),
+            "PSAL_QC": (["N_PROF", "N_LEVELS"], np.ones((n_prof, n_levels), dtype=int)),
+            "PRES_QC": (["N_PROF", "N_LEVELS"], np.ones((n_prof, n_levels), dtype=int)),
+            "LATITUDE": (["N_PROF"], np.linspace(30.0, 40.0, n_prof)),
+            "LONGITUDE": (["N_PROF"], np.linspace(-40.0, -30.0, n_prof)),
+            "TIME": (["N_PROF"], np.array(
+                pd.date_range("2023-01-01", periods=n_prof, freq="30D"),
+                dtype="datetime64[ns]",
+            )),
+            "PLATFORM_NUMBER": (["N_PROF"], np.full(n_prof, "6902746")),
+            "CYCLE_NUMBER": (["N_PROF"], np.arange(1, n_prof + 1)),
+        }
+    )
+
+
+class TestGetDataByFloat:
+    def test_cache_hit(self, manager, tmp_path):
+        """When a cached .nc file for a float exists, load from disk."""
+        ds = _make_float_dataset()
+        cache_key = manager._build_float_cache_key(6902746)
+        cache_path = tmp_path / f"{cache_key}.nc"
+        ds.to_netcdf(cache_path)
+
+        result = manager.get_data_by_float(6902746)
+
+        assert result is not None
+        assert "TEMP" in result
+        assert result.sizes["N_PROF"] == 5
+
+    @patch("backend.data.argo_manager._fetch_xarray_with_timeout")
+    @patch("backend.data.argo_manager.argopy")
+    def test_erddap_success(self, mock_argopy, mock_fetch, manager, tmp_path):
+        """On cache miss, fetch from ERDDAP and cache to disk."""
+        ds = _make_float_dataset()
+        mock_fetch.return_value = ds
+
+        result = manager.get_data_by_float(6902746)
+
+        assert result is not None
+        assert "TEMP" in result
+        mock_argopy.DataFetcher.assert_called_once_with(src="erddap")
+        mock_argopy.DataFetcher.return_value.float.assert_called_once_with(6902746)
+        # Verify cached
+        cache_key = manager._build_float_cache_key(6902746)
+        assert (tmp_path / f"{cache_key}.nc").exists()
+
+    @patch("backend.data.argo_manager._fetch_xarray_with_timeout")
+    @patch("backend.data.argo_manager.argopy")
+    def test_fallback_to_gdac(self, mock_argopy, mock_fetch, manager):
+        """When ERDDAP fails, fall back to GDAC."""
+        ds = _make_float_dataset()
+        mock_fetch.side_effect = [Exception("ERDDAP down"), ds]
+
+        result = manager.get_data_by_float(6902746)
+
+        assert result is not None
+        assert mock_argopy.DataFetcher.call_count == 2
+        calls = mock_argopy.DataFetcher.call_args_list
+        assert calls[0].kwargs["src"] == "erddap"
+        assert calls[1].kwargs["src"] == "gdac"
+
+    @patch("backend.data.argo_manager._fetch_xarray_with_timeout")
+    @patch("backend.data.argo_manager.argopy")
+    def test_both_fail_returns_none(self, mock_argopy, mock_fetch, manager):
+        """When both ERDDAP and GDAC fail, return None."""
+        mock_fetch.side_effect = [Exception("ERDDAP down"), Exception("GDAC down")]
+
+        result = manager.get_data_by_float(6902746)
+
+        assert result is None
+
+
+class TestGetDataByProfile:
+    @patch("backend.data.argo_manager._fetch_xarray_with_timeout")
+    @patch("backend.data.argo_manager.argopy")
+    def test_success(self, mock_argopy, mock_fetch, manager):
+        """Fetch a single profile by WMO ID and cycle number."""
+        ds = _make_float_dataset(n_prof=1)
+        mock_fetch.return_value = ds
+
+        result = manager.get_data_by_profile(6902746, 10)
+
+        assert result is not None
+        mock_argopy.DataFetcher.return_value.profile.assert_called_once_with(6902746, 10)
+
+
+class TestExtractTrajectory:
+    def test_sorted_by_time(self, manager):
+        """Trajectory should be sorted by time."""
+        ds = _make_float_dataset(n_prof=5)
+        # Scramble the time order
+        times = ds["TIME"].values.copy()
+        ds["TIME"].values[:] = times[::-1]
+
+        traj = manager.extract_trajectory(ds)
+
+        assert traj is not None
+        assert len(traj["latitudes"]) == 5
+        assert len(traj["longitudes"]) == 5
+        assert len(traj["timestamps"]) == 5
+        # Verify sorted ascending
+        for i in range(len(traj["timestamps"]) - 1):
+            assert traj["timestamps"][i] <= traj["timestamps"][i + 1]
+
+    def test_none_dataset(self, manager):
+        """Should return None for None dataset."""
+        traj = manager.extract_trajectory(None)
+
+        assert traj is None
