@@ -13,11 +13,11 @@ function generateSessionId(): string {
 
 export function ChatInterface() {
   const [sessionId] = useState(generateSessionId);
-  const { events, addEvent, clearEvents } = useAgentActivity();
+  const { events, addEvent, addWarning, clearEvents } = useAgentActivity();
 
   const chatCallbacks = useMemo(
-    () => ({ onAgentEvent: addEvent }),
-    [addEvent],
+    () => ({ onAgentEvent: addEvent, onWarning: addWarning }),
+    [addEvent, addWarning],
   );
 
   const { messages, isLoading, error, statusText, send, clearError } = useChat(

@@ -119,6 +119,86 @@ class TestOceanBasinBounds:
             result = ocean_basin_bounds.invoke({"basin": basin_name})
             assert result["success"] is True
 
+    def test_tropical_atlantic_exists(self):
+        result = ocean_basin_bounds.invoke({"basin": "tropical_atlantic"})
+        assert result["success"] is True
+        assert result["basin"] == "tropical_atlantic"
+        assert result["lat_min"] == -20
+        assert result["lat_max"] == 20
+
+    def test_area_deg2_in_response(self):
+        result = ocean_basin_bounds.invoke({"basin": "mediterranean"})
+        assert result["success"] is True
+        assert "area_deg2" in result
+        assert result["area_deg2"] > 0
+
+    def test_subregions_smaller_than_full_basins(self):
+        atlantic = ocean_basin_bounds.invoke({"basin": "atlantic"})
+        north_atlantic = ocean_basin_bounds.invoke({"basin": "north_atlantic"})
+        assert north_atlantic["area_deg2"] < atlantic["area_deg2"]
+
+
+class TestQueryOceanDataSmartDefaults:
+    @patch("backend.tools.argo_tools._get_manager")
+    def test_applies_90_day_default_when_no_dates(self, mock_get_manager):
+        """Verify manager receives non-None dates when none provided."""
+        mock_manager = MagicMock()
+        mock_manager.get_data.return_value = None
+        mock_get_manager.return_value = mock_manager
+
+        query_ocean_data.invoke({"variable": "TEMP"})
+
+        call_kwargs = mock_manager.get_data.call_args[1]
+        assert call_kwargs["start_date"] is not None
+        assert call_kwargs["end_date"] is not None
+
+    @patch("backend.tools.argo_tools._get_manager")
+    def test_preserves_explicit_dates(self, mock_get_manager):
+        """Verify explicit dates pass through unchanged."""
+        mock_manager = MagicMock()
+        mock_manager.get_data.return_value = None
+        mock_get_manager.return_value = mock_manager
+
+        query_ocean_data.invoke({
+            "variable": "TEMP",
+            "start_date": "2020-01-01",
+            "end_date": "2023-12-31",
+        })
+
+        call_kwargs = mock_manager.get_data.call_args[1]
+        assert call_kwargs["start_date"] == "2020-01-01"
+        assert call_kwargs["end_date"] == "2023-12-31"
+
+    @patch("backend.tools.argo_tools._get_manager")
+    def test_large_query_includes_warning(self, mock_get_manager):
+        """Verify warning field present for large queries."""
+        # Create a mock dataset that looks like real data
+        mock_ds = MagicMock()
+        mock_ds.__contains__ = lambda self, key: key in ("TEMP", "LATITUDE", "LONGITUDE")
+        mock_ds.__getitem__ = lambda self, key: MagicMock(
+            values=MagicMock(
+                flatten=lambda: np.array([15.0, 16.0, 17.0]),
+                tolist=lambda: [30.0, 31.0, 32.0],
+            )
+        )
+        mock_ds.sizes = {"N_PROF": 3}
+        mock_manager = MagicMock()
+        mock_manager.get_data.return_value = mock_ds
+        mock_get_manager.return_value = mock_manager
+
+        # Full Atlantic = large query
+        result = query_ocean_data.invoke({
+            "variable": "TEMP",
+            "lat_min": -60, "lat_max": 60,
+            "lon_min": -80, "lon_max": 0,
+            "start_date": "2000-01-01",
+            "end_date": "2024-12-31",
+        })
+
+        assert result["success"] is True
+        assert "warning" in result
+        assert "query_estimate" in result
+
 
 class TestQueryOceanDataTimeout:
     @patch("backend.tools.argo_tools._get_manager")

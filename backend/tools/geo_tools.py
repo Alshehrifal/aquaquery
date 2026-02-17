@@ -116,12 +116,16 @@ def ocean_basin_bounds(basin: str) -> dict[str, Any]:
     """Return latitude/longitude bounds for a named ocean basin.
 
     Args:
-        basin: Ocean basin name (e.g., 'atlantic', 'pacific', 'indian',
-               'southern', 'arctic', 'mediterranean', 'north_atlantic',
-               'south_atlantic', 'north_pacific', 'south_pacific')
+        basin: Ocean basin name. Full basins: 'atlantic', 'pacific', 'indian',
+               'southern', 'arctic'. Half basins: 'north_atlantic',
+               'south_atlantic', 'north_pacific', 'south_pacific'.
+               Subregions (smaller, faster): 'mediterranean', 'tropical_atlantic',
+               'tropical_pacific', 'tropical_indian', 'gulf_of_mexico',
+               'caribbean', 'red_sea'.
+               Prefer subregions for faster queries.
 
     Returns:
-        Dict with lat_min, lat_max, lon_min, lon_max for the basin.
+        Dict with lat_min, lat_max, lon_min, lon_max, and area_deg2 for the basin.
     """
     logger.info("ocean_basin_bounds called: basin=%s", basin)
     basin_key = basin.lower().strip().replace(" ", "_")
@@ -134,6 +138,10 @@ def ocean_basin_bounds(basin: str) -> dict[str, Any]:
         }
 
     bounds = OCEAN_BASINS[basin_key]
+    area_deg2 = int(
+        abs(bounds["lat_max"] - bounds["lat_min"])
+        * abs(bounds["lon_max"] - bounds["lon_min"])
+    )
     return {
         "success": True,
         "basin": basin_key,
@@ -141,4 +149,5 @@ def ocean_basin_bounds(basin: str) -> dict[str, Any]:
         "lat_max": bounds["lat_max"],
         "lon_min": bounds["lon_min"],
         "lon_max": bounds["lon_max"],
+        "area_deg2": area_deg2,
     }

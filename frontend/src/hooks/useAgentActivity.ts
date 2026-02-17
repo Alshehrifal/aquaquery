@@ -5,12 +5,13 @@ export interface AgentEvent {
   readonly agent: string;
   readonly action: string;
   readonly timestamp: number;
-  readonly status: 'active' | 'completed';
+  readonly status: 'active' | 'completed' | 'warning';
 }
 
 interface UseAgentActivityReturn {
   readonly events: readonly AgentEvent[];
   readonly addEvent: (agent: string, action: string) => void;
+  readonly addWarning: (message: string) => void;
   readonly clearEvents: () => void;
 }
 
@@ -52,9 +53,20 @@ export function useAgentActivity(): UseAgentActivityReturn {
     });
   }, []);
 
+  const addWarning = useCallback((message: string) => {
+    const warningEvent: AgentEvent = {
+      id: generateEventId(),
+      agent: 'warning',
+      action: message,
+      timestamp: Date.now(),
+      status: 'warning',
+    };
+    setEvents((prev) => [...prev, warningEvent]);
+  }, []);
+
   const clearEvents = useCallback(() => {
     setEvents([]);
   }, []);
 
-  return { events, addEvent, clearEvents };
+  return { events, addEvent, addWarning, clearEvents };
 }

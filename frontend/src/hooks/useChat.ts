@@ -29,6 +29,7 @@ export function useChat(
   useStreaming = true,
   callbacks?: {
     onAgentEvent?: (agent: string, action: string) => void;
+    onWarning?: (message: string) => void;
   },
 ): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -79,6 +80,9 @@ export function useChat(
                 m.id === assistantId ? { ...m, content: cleaned } : m,
               ),
             );
+          },
+          onWarning: (warningMsg) => {
+            callbacks?.onWarning?.(warningMsg);
           },
           onVisualization: (viz) => {
             setMessages((prev) =>
