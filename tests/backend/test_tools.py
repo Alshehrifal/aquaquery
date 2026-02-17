@@ -121,27 +121,37 @@ class TestOceanBasinBounds:
 
 
 class TestQueryOceanDataTimeout:
-    @patch("backend.tools.argo_tools._get_loader")
-    def test_returns_error_dict_on_timeout(self, mock_get_loader):
-        mock_loader = MagicMock()
-        mock_loader.fetch_region.side_effect = TimeoutError(
+    @patch("backend.tools.argo_tools._get_manager")
+    def test_returns_error_dict_on_timeout(self, mock_get_manager):
+        mock_manager = MagicMock()
+        mock_manager.get_data.side_effect = TimeoutError(
             "Data fetch timed out after 45s. Try a smaller region or time range."
         )
-        mock_get_loader.return_value = mock_loader
+        mock_get_manager.return_value = mock_manager
 
         result = query_ocean_data.invoke({"variable": "TEMP"})
         assert result["success"] is False
         assert "timed out" in result["error"]
 
-    @patch("backend.tools.argo_tools._get_loader")
-    def test_generic_exception_still_handled(self, mock_get_loader):
-        mock_loader = MagicMock()
-        mock_loader.fetch_region.side_effect = RuntimeError("connection lost")
-        mock_get_loader.return_value = mock_loader
+    @patch("backend.tools.argo_tools._get_manager")
+    def test_generic_exception_still_handled(self, mock_get_manager):
+        mock_manager = MagicMock()
+        mock_manager.get_data.side_effect = RuntimeError("connection lost")
+        mock_get_manager.return_value = mock_manager
 
         result = query_ocean_data.invoke({"variable": "TEMP"})
         assert result["success"] is False
         assert "connection lost" in result["error"]
+
+    @patch("backend.tools.argo_tools._get_manager")
+    def test_returns_error_when_both_sources_fail(self, mock_get_manager):
+        mock_manager = MagicMock()
+        mock_manager.get_data.return_value = None
+        mock_get_manager.return_value = mock_manager
+
+        result = query_ocean_data.invoke({"variable": "TEMP"})
+        assert result["success"] is False
+        assert "Failed to fetch data" in result["error"]
 
 
 class TestGetNearestProfilesTimeout:

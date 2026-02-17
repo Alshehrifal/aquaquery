@@ -6,12 +6,16 @@ from typing import Any
 import numpy as np
 from langchain_core.tools import tool
 
+from backend.data.argo_manager import ArgoDataManager
 from backend.data.loader import ArgoDataLoader, OCEAN_BASINS
 
 logger = logging.getLogger(__name__)
 
-# Module-level loader instance (initialized on first use)
+# Module-level loader instance for get_data_coverage (static metadata only)
 _loader: ArgoDataLoader | None = None
+
+# Module-level manager instance for query_ocean_data (ERDDAP-first + caching)
+_manager: ArgoDataManager | None = None
 
 
 def _get_loader() -> ArgoDataLoader:
@@ -25,6 +29,19 @@ def set_loader(loader: ArgoDataLoader) -> None:
     """Set the data loader instance (for testing)."""
     global _loader
     _loader = loader
+
+
+def _get_manager() -> ArgoDataManager:
+    global _manager
+    if _manager is None:
+        _manager = ArgoDataManager()
+    return _manager
+
+
+def set_manager(manager: ArgoDataManager) -> None:
+    """Set the data manager instance (for testing)."""
+    global _manager
+    _manager = manager
 
 
 @tool
@@ -67,16 +84,25 @@ def query_ocean_data(
         }
 
     variable = variable.upper()
-    time_range = (start_date, end_date) if start_date and end_date else None
 
     try:
-        loader = _get_loader()
-        ds = loader.fetch_region(
-            lat_bounds=(lat_min, lat_max),
-            lon_bounds=(lon_min, lon_max),
-            depth_range=(depth_min, depth_max),
-            time_range=time_range,
+        manager = _get_manager()
+        ds = manager.get_data(
+            lon_min=lon_min,
+            lon_max=lon_max,
+            lat_min=lat_min,
+            lat_max=lat_max,
+            depth_min=depth_min,
+            depth_max=depth_max,
+            start_date=start_date,
+            end_date=end_date,
         )
+
+        if ds is None:
+            return {
+                "error": "Failed to fetch data from all sources",
+                "success": False,
+            }
 
         if variable not in ds:
             return {

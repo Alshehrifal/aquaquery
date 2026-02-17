@@ -138,35 +138,43 @@ async def chat_stream(
         }
 
         try:
-            yield {"event": "status", "data": json.dumps({"agent": "supervisor", "action": "Understanding your question..."})}
+            # Accumulate final state from per-node stream updates
+            final_state: dict[str, Any] = {}
+            agent_path: list[str] = []
 
-            result = await _graph.ainvoke(state)
+            async for event in _graph.astream(state, stream_mode="updates"):
+                for node_name, node_state in event.items():
+                    friendly = _AGENT_STATUS_LABELS.get(node_name, "Processing...")
+                    yield {
+                        "event": "status",
+                        "data": json.dumps({"agent": node_name, "action": friendly}),
+                    }
+                    agent_path.append(node_name)
+                    # Merge node output into accumulated state
+                    for key, value in node_state.items():
+                        final_state[key] = value
 
-            agent_path = result.get("metadata", {}).get("agent_path", [])
-            if len(agent_path) > 1:
-                friendly = _AGENT_STATUS_LABELS.get(agent_path[-1], "Processing...")
-                yield {"event": "status", "data": json.dumps({"agent": agent_path[-1], "action": friendly})}
-
-            # Stream the content token by token (simulated for non-streaming LLM)
-            messages = result.get("messages", [])
+            # Extract response content and sanitize
+            messages_out = final_state.get("messages", [])
             content = ""
-            if messages:
-                content = sanitize_response(getattr(messages[-1], "content", str(messages[-1])))
+            if messages_out:
+                last_msg = messages_out[-1]
+                content = sanitize_response(getattr(last_msg, "content", str(last_msg)))
 
             # Send content in chunks
             chunk_size = 20
             for i in range(0, len(content), chunk_size):
                 chunk = content[i:i + chunk_size]
                 yield {"event": "token", "data": json.dumps({"content": chunk})}
-                await asyncio.sleep(0.02)  # Small delay for streaming effect
+                await asyncio.sleep(0.02)
 
             # Send visualization if present
-            viz = result.get("visualization")
+            viz = final_state.get("visualization")
             if viz and viz.get("plotly_json"):
                 yield {"event": "visualization", "data": json.dumps(viz)}
 
             # Store assistant message
-            sources = result.get("data", {}).get("sources", [])
+            sources = final_state.get("data", {}).get("sources", [])
             _session_store.add_message(
                 sid, "assistant", content,
                 visualization=viz,

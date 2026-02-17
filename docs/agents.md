@@ -131,3 +131,28 @@ The viz agent returns:
 - Scientific axis labels with units
 - Interactive hover tooltips
 - Download button (PNG export)
+
+## Agent Activity Panel
+
+The frontend includes a dedicated side panel showing real-time agent pipeline activity.
+
+### SSE Event Flow
+```
+LangGraph astream(stream_mode="updates")
+    -> per-node status SSE events
+        -> useChat onStatus callback
+            -> useAgentActivity.addEvent()
+                -> ActivityPanel renders timeline
+```
+
+### Granular Streaming
+The `/chat/stream` endpoint uses `_graph.astream()` with `stream_mode="updates"` to emit
+a status event as each LangGraph node completes. This provides 2-4 status events per query
+(supervisor, then rag/query, optionally viz) instead of the previous 2 (start + end).
+
+### Layout
+- 70/30 horizontal split: chat section (flex-1) | activity panel (w-80/w-96)
+- Panel is hidden below `lg` breakpoint (1024px) for mobile responsiveness
+- Panel displays: agent name, action description, active/completed status icons
+- Active events show a spinning loader; completed events show a check mark
+- framer-motion slide-in animations for new events

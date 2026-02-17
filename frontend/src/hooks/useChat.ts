@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { sendMessage, streamMessage } from '../services/api';
 import { sanitizeContent } from '../services/sanitize';
-import type { ChatMessage, Visualization } from '../types';
+import type { ChatMessage } from '../types';
 
 const AGENT_LABELS: Record<string, string> = {
   supervisor: 'Understanding your question...',
@@ -24,7 +24,13 @@ function generateId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-export function useChat(sessionId: string, useStreaming = true): UseChatReturn {
+export function useChat(
+  sessionId: string,
+  useStreaming = true,
+  callbacks?: {
+    onAgentEvent?: (agent: string, action: string) => void;
+  },
+): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +59,6 @@ export function useChat(sessionId: string, useStreaming = true): UseChatReturn {
       if (useStreaming) {
         const assistantId = generateId();
         let accumulatedContent = '';
-        let visualization: Visualization | null = null;
-
         // Add placeholder assistant message
         setMessages((prev) => [
           ...prev,
@@ -65,6 +69,7 @@ export function useChat(sessionId: string, useStreaming = true): UseChatReturn {
           onStatus: (agent, action) => {
             const friendly = AGENT_LABELS[agent] ?? action;
             setStatusText(friendly);
+            callbacks?.onAgentEvent?.(agent, friendly);
           },
           onToken: (content) => {
             accumulatedContent += content;
@@ -76,7 +81,6 @@ export function useChat(sessionId: string, useStreaming = true): UseChatReturn {
             );
           },
           onVisualization: (viz) => {
-            visualization = viz;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, visualization: viz } : m,
@@ -86,6 +90,7 @@ export function useChat(sessionId: string, useStreaming = true): UseChatReturn {
           onDone: (_messageId, _agentPath) => {
             setIsLoading(false);
             setStatusText('');
+            callbacks?.onAgentEvent?.('done', '');
           },
           onError: (errMsg) => {
             setError(errMsg);
@@ -115,7 +120,7 @@ export function useChat(sessionId: string, useStreaming = true): UseChatReturn {
           });
       }
     },
-    [sessionId, isLoading, useStreaming, addMessage],
+    [sessionId, isLoading, useStreaming, addMessage, callbacks],
   );
 
   const clearError = useCallback(() => setError(null), []);

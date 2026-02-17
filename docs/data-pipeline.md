@@ -8,10 +8,15 @@ locally for performance.
 
 ## argopy Fetch Strategy
 
-### Data Access Mode
-- **Primary:** argopy DataFetcher with `src='gdac'` (official source)
-- **Fallback:** argopy with `src='erddap'` (alternative server)
-- **Cache:** Local file cache at `data/sample/` (argopy built-in caching)
+### Data Access Mode (ArgoDataManager)
+- **Primary:** argopy DataFetcher with `src='erddap'` (fast, reliable)
+- **Fallback:** argopy with `src='gdac'` (official source, slower)
+- **Cache:** File-based NetCDF caching at `data/cache/` (MD5-keyed .nc files)
+
+### Legacy Mode (ArgoDataLoader -- used for metadata only)
+- **Primary:** argopy DataFetcher with `src='gdac'`
+- **Fallback:** argopy with `src='erddap'`
+- **Cache:** argopy built-in caching at `data/sample/`
 
 ### Fetch Patterns
 ```python
@@ -35,15 +40,24 @@ For fast demos, pre-fetch a small region:
 - Time: 2023-2024
 - ~500-1000 profiles, manageable size
 
-## Local Caching
+## Caching Strategy
 
-argopy provides built-in caching:
+### ArgoDataManager File Cache (primary)
+Query parameters are hashed to an MD5 key. Cached results are stored as `.nc` files:
+```
+data/cache/<md5_hash>.nc
+```
+
+- **Cache hit:** Load from disk (<1s)
+- **Cache miss:** Fetch from ERDDAP (~10-20s), then GDAC fallback (~30-60s)
+- **Cache invalidation:** Manual (delete files in `data/cache/`)
+- **Key components:** lon_min, lon_max, lat_min, lat_max, depth_min, depth_max, start_date, end_date
+
+### argopy Built-in Cache (legacy)
 ```python
 argopy.set_options(cachedir='data/sample/', cache=True)
 ```
-
-First fetch downloads data; subsequent requests use local cache.
-Cache invalidation: manual (delete cache dir for fresh data).
+Used by `ArgoDataLoader` for metadata-only operations.
 
 ## NetCDF Data Structure
 
@@ -122,13 +136,19 @@ AquaQuery keeps only QC flags 1 and 2.
 ## Data Flow Summary
 
 ```
-User Query -> Query Agent -> argopy DataFetcher -> GDAC/Cache
-                                                       |
-                                                  xarray Dataset
-                                                       |
-                                              Filter (QC, bounds)
-                                                       |
-                                              Aggregation/Stats
-                                                       |
-                                              Structured Response
+User Query -> Query Agent -> ArgoDataManager -> File Cache (.nc)
+                                                    |
+                                              (cache miss)
+                                                    |
+                                            ERDDAP -> GDAC (fallback)
+                                                    |
+                                              xarray Dataset
+                                                    |
+                                            QC Filter (flags 1,2)
+                                                    |
+                                            Save to cache (.nc)
+                                                    |
+                                            Aggregation/Stats
+                                                    |
+                                            Structured Response
 ```

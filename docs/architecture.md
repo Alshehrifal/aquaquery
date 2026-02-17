@@ -20,8 +20,11 @@ graph TD
     RAG --> CHROMA[ChromaDB Vector Store]
     QA --> TOOLS[Tool Layer]
     TOOLS --> ARGO[argopy / xarray]
-    ARGO --> GDAC[Argo GDAC Data]
+    ARGO --> CACHE[File Cache .nc]
+    CACHE -->|miss| ERDDAP[ERDDAP Server]
+    CACHE -->|miss fallback| GDAC[Argo GDAC Data]
     VIZ --> PLOTLY[Plotly JSON Generator]
+    FE --> PANEL[Agent Activity Panel]
 
     style User fill:#e3f2fd
     style FE fill:#bbdefb
@@ -30,6 +33,7 @@ graph TD
     style RAG fill:#c8e6c9
     style QA fill:#c8e6c9
     style VIZ fill:#c8e6c9
+    style CACHE fill:#ffe0b2
 ```
 
 ## Data Flow
@@ -61,10 +65,17 @@ graph TD
 - In-memory session storage
 
 ### Data Layer
-- **argopy**: Fetches Argo float data from GDAC
+- **ArgoDataManager**: ERDDAP-first data fetching with file-based NetCDF caching
+- **argopy**: Fetches Argo float data (ERDDAP primary, GDAC fallback)
 - **xarray**: N-dimensional array operations on NetCDF data
 - **ChromaDB**: Vector store for oceanographic knowledge base
 - **sentence-transformers**: Local embeddings (all-MiniLM-L6-v2)
+
+### ArgoDataManager
+The `ArgoDataManager` class replaces direct `ArgoDataLoader.fetch_region()` calls
+for data queries. It uses ERDDAP as the primary source (faster, more reliable) with
+GDAC as fallback. Results are cached as `.nc` files in `data/cache/` using MD5 hash
+keys derived from query parameters. Cache hit performance: <1s vs 10-60s for fresh fetches.
 
 ## Tech Stack Rationale
 
