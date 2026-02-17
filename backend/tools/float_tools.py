@@ -10,6 +10,11 @@ from backend.data.argo_manager import ArgoDataManager
 
 logger = logging.getLogger(__name__)
 
+# Limits to prevent tool responses from exceeding LLM context window.
+# Full data is still fetched and cached; only the LLM-facing response is trimmed.
+_MAX_TRAJECTORY_POINTS = 50
+_MAX_DEPTH_LEVELS = 200
+
 _manager: ArgoDataManager | None = None
 
 
@@ -24,6 +29,37 @@ def set_manager(manager: ArgoDataManager) -> None:
     """Set the data manager instance (for testing)."""
     global _manager
     _manager = manager
+
+
+def _truncate_trajectory(
+    trajectory: dict | None,
+    max_points: int = _MAX_TRAJECTORY_POINTS,
+) -> dict | None:
+    """Downsample a trajectory to at most *max_points* evenly-spaced entries.
+
+    Preserves first and last points so the start/end markers remain accurate.
+    Returns a new dict (never mutates the input).
+    """
+    if trajectory is None:
+        return None
+
+    lats = trajectory.get("latitudes", [])
+    lons = trajectory.get("longitudes", [])
+    times = trajectory.get("timestamps", [])
+
+    n = len(lats)
+    if n <= max_points:
+        return {**trajectory}
+
+    # Evenly-spaced indices, always including first and last
+    indices = np.linspace(0, n - 1, max_points, dtype=int)
+    return {
+        "latitudes": [lats[i] for i in indices],
+        "longitudes": [lons[i] for i in indices],
+        "timestamps": [times[i] for i in indices],
+        "total_points": n,
+        "truncated": True,
+    }
 
 
 @tool
@@ -60,7 +96,7 @@ def query_by_float_id(
             }
 
         n_profiles = ds.sizes.get("N_PROF", 0)
-        trajectory = manager.extract_trajectory(ds)
+        trajectory = _truncate_trajectory(manager.extract_trajectory(ds))
         stats = manager.get_statistics(ds, variable)
 
         return {
@@ -103,7 +139,7 @@ def get_float_trajectory(
                 "success": False,
             }
 
-        trajectory = manager.extract_trajectory(ds)
+        trajectory = _truncate_trajectory(manager.extract_trajectory(ds))
         n_profiles = ds.sizes.get("N_PROF", 0)
 
         return {
@@ -256,16 +292,25 @@ def query_by_profile(
                     depths.append(float(d))
                     values.append(float(v))
 
-        return {
+        total_levels = len(depths)
+        truncated = total_levels > _MAX_DEPTH_LEVELS
+        if truncated:
+            depths = depths[:_MAX_DEPTH_LEVELS]
+            values = values[:_MAX_DEPTH_LEVELS]
+
+        result: dict[str, Any] = {
             "success": True,
             "wmo_id": wmo_id,
             "cycle_number": cycle_number,
             "variable": variable,
             "depths": depths,
             "values": values,
-            "n_levels": len(depths),
+            "n_levels": total_levels,
             "chart_hint": "depth_profile",
         }
+        if truncated:
+            result["truncated"] = True
+        return result
 
     except TimeoutError as e:
         logger.warning("Profile query timed out: %s", e)
