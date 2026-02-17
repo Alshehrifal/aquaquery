@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 
 from backend.data.argo_manager import ArgoDataManager
 from backend.data.loader import ArgoDataLoader, OCEAN_BASINS
+from backend.tools.query_estimation import apply_smart_date_defaults, estimate_query_size
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,25 @@ def query_ocean_data(
 
     variable = variable.upper()
 
+    # Apply smart date defaults when user/LLM omits dates
+    start_date, end_date = apply_smart_date_defaults(start_date, end_date)
+
+    # Estimate query size for warnings
+    query_estimate = estimate_query_size(
+        lat_min, lat_max, lon_min, lon_max,
+        depth_min, depth_max, start_date, end_date,
+    )
+    if query_estimate["is_very_large"]:
+        logger.warning(
+            "Very large query: ~%d estimated profiles, area=%d deg^2",
+            query_estimate["estimated_profiles"], query_estimate["area_deg2"],
+        )
+    elif query_estimate["is_large"]:
+        logger.warning(
+            "Large query: ~%d estimated profiles, area=%d deg^2",
+            query_estimate["estimated_profiles"], query_estimate["area_deg2"],
+        )
+
     try:
         manager = _get_manager()
         ds = manager.get_data(
@@ -142,7 +162,20 @@ def query_ocean_data(
                 for lat, lon in zip(lats[:20], lons[:20])
             ],
             "values_sample": valid_values[:100].tolist() if len(valid_values) > 0 else [],
+            "query_estimate": query_estimate,
         }
+
+        if query_estimate["is_very_large"]:
+            result["warning"] = (
+                f"Very large query (~{query_estimate['estimated_profiles']:,} estimated profiles, "
+                f"{query_estimate['area_deg2']:,} deg^2). Consider using a subregion "
+                "(e.g., north_atlantic instead of atlantic) or narrower time range."
+            )
+        elif query_estimate["is_large"]:
+            result["warning"] = (
+                f"Large query (~{query_estimate['estimated_profiles']:,} estimated profiles). "
+                "Results may be slow. Consider narrowing the region or time range."
+            )
 
         return result
 

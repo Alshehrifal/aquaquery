@@ -58,6 +58,13 @@ OCEAN_BASINS: dict[str, dict[str, float]] = {
     "south_atlantic": {"lat_min": -60, "lat_max": 0, "lon_min": -70, "lon_max": 20},
     "north_pacific": {"lat_min": 20, "lat_max": 60, "lon_min": 100, "lon_max": -100},
     "south_pacific": {"lat_min": -60, "lat_max": 0, "lon_min": 150, "lon_max": -70},
+    # Subregions (smaller, faster queries)
+    "tropical_atlantic": {"lat_min": -20, "lat_max": 20, "lon_min": -80, "lon_max": 0},
+    "tropical_pacific": {"lat_min": -20, "lat_max": 20, "lon_min": 120, "lon_max": -80},
+    "tropical_indian": {"lat_min": -20, "lat_max": 20, "lon_min": 40, "lon_max": 100},
+    "gulf_of_mexico": {"lat_min": 18, "lat_max": 31, "lon_min": -98, "lon_max": -80},
+    "caribbean": {"lat_min": 9, "lat_max": 22, "lon_min": -90, "lon_max": -60},
+    "red_sea": {"lat_min": 12, "lat_max": 30, "lon_min": 32, "lon_max": 44},
 }
 
 

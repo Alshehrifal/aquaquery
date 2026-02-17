@@ -27,6 +27,7 @@ export function streamMessage(
     onStatus?: (agent: string, action: string) => void;
     onToken?: (content: string) => void;
     onVisualization?: (viz: Visualization) => void;
+    onWarning?: (message: string) => void;
     onDone?: (messageId: string, agentPath: string[]) => void;
     onError?: (message: string) => void;
   },
@@ -51,6 +52,11 @@ export function streamMessage(
   eventSource.addEventListener('visualization', (e) => {
     const data = JSON.parse(e.data);
     callbacks.onVisualization?.(data);
+  });
+
+  eventSource.addEventListener('warning', (e) => {
+    const data = JSON.parse(e.data);
+    callbacks.onWarning?.(data.message);
   });
 
   eventSource.addEventListener('done', (e) => {

@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Activity, CheckCircle, Loader } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, Loader } from 'lucide-react';
 import type { AgentEvent } from '../hooks/useAgentActivity';
 
 const AGENT_LABELS: Record<string, string> = {
@@ -21,7 +21,27 @@ interface ActivityPanelProps {
 
 function EventItem({ event }: { readonly event: AgentEvent }) {
   const isActive = event.status === 'active';
-  const label = AGENT_LABELS[event.agent] ?? event.agent;
+  const isWarning = event.status === 'warning';
+  const label = isWarning ? 'Warning' : (AGENT_LABELS[event.agent] ?? event.agent);
+
+  if (isWarning) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.25 }}
+        className="flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2"
+      >
+        <div className="mt-0.5 flex-shrink-0">
+          <AlertTriangle className="h-4 w-4 text-amber-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-amber-300">{label}</p>
+          <p className="text-xs text-amber-200/80">{event.action}</p>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div

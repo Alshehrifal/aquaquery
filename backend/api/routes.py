@@ -154,6 +154,15 @@ async def chat_stream(
                     for key, value in node_state.items():
                         final_state[key] = value
 
+                    # Emit warnings from tool results
+                    tool_results = node_state.get("data", {}).get("tool_results", {})
+                    for _tool_key, tool_result in tool_results.items():
+                        if isinstance(tool_result, dict) and "warning" in tool_result:
+                            yield {
+                                "event": "warning",
+                                "data": json.dumps({"message": tool_result["warning"]}),
+                            }
+
             # Extract response content and sanitize
             messages_out = final_state.get("messages", [])
             content = ""
