@@ -12,6 +12,7 @@ from backend.agents.viz_agent import (
     generate_depth_profile,
     generate_scatter_map,
     generate_time_series,
+    generate_trajectory_map,
 )
 
 
@@ -136,6 +137,51 @@ class TestGenerateScatterMap:
         assert geo["showocean"] is True
 
 
+class TestGenerateTrajectoryMap:
+    def test_returns_valid_plotly(self):
+        result = generate_trajectory_map(
+            lats=[30.0, 32.5, 35.0, 37.5, 40.0],
+            lons=[-40.0, -37.5, -35.0, -32.5, -30.0],
+            timestamps=["2023-01-01", "2023-02-01", "2023-03-01", "2023-04-01", "2023-05-01"],
+            wmo_id=6902746,
+        )
+        assert result["chart_type"] == "trajectory_map"
+        assert "plotly_json" in result
+        data = result["plotly_json"]["data"]
+        # Should have trajectory line + start marker + end marker
+        assert len(data) >= 1
+        assert data[0]["type"] == "scattergeo"
+        assert data[0]["mode"] == "lines+markers"
+
+    def test_has_start_end_markers(self):
+        result = generate_trajectory_map(
+            lats=[30.0, 35.0, 40.0],
+            lons=[-40.0, -35.0, -30.0],
+            timestamps=["2023-01-01", "2023-03-01", "2023-05-01"],
+            wmo_id=6902746,
+        )
+        data = result["plotly_json"]["data"]
+        # Find start and end markers
+        marker_names = [trace.get("name", "") for trace in data]
+        assert "Start" in marker_names
+        assert "End" in marker_names
+        # Start marker should be green, end red
+        start_trace = next(t for t in data if t.get("name") == "Start")
+        end_trace = next(t for t in data if t.get("name") == "End")
+        assert start_trace["marker"]["color"] == "green"
+        assert end_trace["marker"]["color"] == "red"
+
+    def test_has_ocean_styling(self):
+        result = generate_trajectory_map(
+            lats=[30.0, 40.0],
+            lons=[-40.0, -30.0],
+            timestamps=["2023-01-01", "2023-05-01"],
+            wmo_id=6902746,
+        )
+        geo = result["plotly_json"]["layout"]["geo"]
+        assert geo["showocean"] is True
+
+
 class TestVizAgentInferChart:
     def test_infers_scatter_map_from_locations(self):
         from backend.agents.viz_agent import VizAgent
@@ -200,6 +246,68 @@ class TestVizAgentInferChart:
         }
         chart = agent._infer_chart_from_data(data)
         assert chart is None
+
+    def test_infers_trajectory_map_from_hint(self):
+        from backend.agents.viz_agent import VizAgent
+
+        agent = VizAgent.__new__(VizAgent)
+        data = {
+            "tool_results": {
+                "get_float_trajectory_0": {
+                    "success": True,
+                    "wmo_id": 6902746,
+                    "chart_hint": "trajectory_map",
+                    "trajectory": {
+                        "latitudes": [30.0, 35.0, 40.0],
+                        "longitudes": [-40.0, -35.0, -30.0],
+                        "timestamps": ["2023-01-01", "2023-03-01", "2023-05-01"],
+                    },
+                }
+            }
+        }
+        chart = agent._infer_chart_from_data(data)
+        assert chart is not None
+        assert chart["chart_type"] == "trajectory_map"
+
+    def test_infers_depth_profile_from_hint(self):
+        from backend.agents.viz_agent import VizAgent
+
+        agent = VizAgent.__new__(VizAgent)
+        data = {
+            "tool_results": {
+                "query_by_profile_0": {
+                    "success": True,
+                    "chart_hint": "depth_profile",
+                    "variable": "TEMP",
+                    "depths": [10.0, 100.0, 500.0, 1000.0],
+                    "values": [25.0, 18.0, 8.0, 4.0],
+                }
+            }
+        }
+        chart = agent._infer_chart_from_data(data)
+        assert chart is not None
+        assert chart["chart_type"] == "depth_profile"
+
+    def test_infers_bar_chart_from_compare_hint(self):
+        from backend.agents.viz_agent import VizAgent
+
+        agent = VizAgent.__new__(VizAgent)
+        data = {
+            "tool_results": {
+                "compare_floats_0": {
+                    "success": True,
+                    "chart_hint": "bar_chart",
+                    "variable": "TEMP",
+                    "comparisons": [
+                        {"wmo_id": 6902746, "statistics": {"mean": 15.0, "median": 14.5, "min": 2.0, "max": 25.0}},
+                        {"wmo_id": 6902747, "statistics": {"mean": 18.0, "median": 17.5, "min": 5.0, "max": 28.0}},
+                    ],
+                }
+            }
+        }
+        chart = agent._infer_chart_from_data(data)
+        assert chart is not None
+        assert chart["chart_type"] == "bar_chart"
 
 
 # --- Helpers for QueryAgent tool-loop tests ---

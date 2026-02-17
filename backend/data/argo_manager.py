@@ -139,6 +139,134 @@ class ArgoDataManager:
             logger.warning("%s fetch failed: %s", source, e)
             return None
 
+    # --- Float/Profile fetch ---
+
+    def _build_float_cache_key(self, wmo_id: int) -> str:
+        """Build a deterministic MD5 cache key for a float query."""
+        params = json.dumps({"type": "float", "wmo_id": wmo_id}, sort_keys=True)
+        return hashlib.md5(params.encode()).hexdigest()
+
+    def get_data_by_float(
+        self,
+        wmo_id: int,
+    ) -> xr.Dataset | None:
+        """Fetch all profiles for an Argo float by WMO ID.
+
+        Strategy: cache -> ERDDAP (primary) -> GDAC (fallback).
+        Note: argopy's .float() fetches all available profiles; date filtering
+        is not supported at the fetch level.
+        """
+        cache_key = self._build_float_cache_key(wmo_id)
+        cached = self._cache_path(cache_key)
+
+        if cached.exists():
+            logger.info("Float cache hit: %s", cached.name)
+            return xr.open_dataset(cached)
+
+        logger.info("Float cache miss, fetching WMO %d", wmo_id)
+
+        ds = self._try_fetch_float("erddap", wmo_id)
+
+        if ds is None:
+            ds = self._try_fetch_float("gdac", wmo_id)
+
+        if ds is None:
+            logger.error("Both ERDDAP and GDAC failed for float %d", wmo_id)
+            return None
+
+        ds = _apply_qc_filter(ds)
+
+        try:
+            ds.to_netcdf(cached)
+            logger.info("Cached float %d to: %s", wmo_id, cached.name)
+        except Exception as e:
+            logger.warning("Failed to cache float dataset: %s", e)
+
+        return ds
+
+    def _try_fetch_float(self, source: str, wmo_id: int) -> xr.Dataset | None:
+        """Attempt to fetch float data from a single source."""
+        try:
+            fetcher = argopy.DataFetcher(src=source).float(wmo_id)
+            ds = _fetch_xarray_with_timeout(fetcher, self._timeout)
+            logger.info("Fetched %d profiles for float %d from %s",
+                        ds.sizes.get("N_PROF", 0), wmo_id, source)
+            return ds
+        except TimeoutError:
+            logger.warning("%s float fetch timed out after %ds", source, self._timeout)
+            return None
+        except Exception as e:
+            logger.warning("%s float fetch failed: %s", source, e)
+            return None
+
+    def get_data_by_profile(
+        self,
+        wmo_id: int,
+        cycle_number: int,
+    ) -> xr.Dataset | None:
+        """Fetch a single profile by WMO ID and cycle number.
+
+        Strategy: ERDDAP (primary) -> GDAC (fallback). No caching for single profiles.
+        """
+        logger.info("Fetching profile: WMO %d, cycle %d", wmo_id, cycle_number)
+
+        ds = self._try_fetch_profile("erddap", wmo_id, cycle_number)
+
+        if ds is None:
+            ds = self._try_fetch_profile("gdac", wmo_id, cycle_number)
+
+        if ds is None:
+            logger.error("Both sources failed for profile WMO %d cycle %d",
+                         wmo_id, cycle_number)
+            return None
+
+        ds = _apply_qc_filter(ds)
+        return ds
+
+    def _try_fetch_profile(
+        self, source: str, wmo_id: int, cycle_number: int,
+    ) -> xr.Dataset | None:
+        """Attempt to fetch a single profile from a single source."""
+        try:
+            fetcher = argopy.DataFetcher(src=source).profile(wmo_id, cycle_number)
+            ds = _fetch_xarray_with_timeout(fetcher, self._timeout)
+            logger.info("Fetched profile WMO %d cycle %d from %s",
+                        wmo_id, cycle_number, source)
+            return ds
+        except TimeoutError:
+            logger.warning("%s profile fetch timed out after %ds", source, self._timeout)
+            return None
+        except Exception as e:
+            logger.warning("%s profile fetch failed: %s", source, e)
+            return None
+
+    def extract_trajectory(self, ds: xr.Dataset | None) -> dict | None:
+        """Extract ordered lat/lon/time arrays sorted by time.
+
+        Returns dict with latitudes, longitudes, timestamps lists, or None.
+        """
+        if ds is None:
+            return None
+
+        if "LATITUDE" not in ds or "LONGITUDE" not in ds or "TIME" not in ds:
+            return None
+
+        lats = ds["LATITUDE"].values
+        lons = ds["LONGITUDE"].values
+        times = ds["TIME"].values
+
+        # Sort by time
+        sort_idx = np.argsort(times)
+        sorted_lats = lats[sort_idx].tolist()
+        sorted_lons = lons[sort_idx].tolist()
+        sorted_times = [str(t)[:19] for t in times[sort_idx]]
+
+        return {
+            "latitudes": sorted_lats,
+            "longitudes": sorted_lons,
+            "timestamps": sorted_times,
+        }
+
     def get_statistics(
         self,
         ds: xr.Dataset | None,

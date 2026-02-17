@@ -9,6 +9,13 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from backend.agents.state import AgentState
 from backend.config import Settings, get_settings
 from backend.tools.argo_tools import get_data_coverage, query_ocean_data
+from backend.tools.float_tools import (
+    compare_floats,
+    get_float_trajectory,
+    get_floats_in_region,
+    query_by_float_id,
+    query_by_profile,
+)
 from backend.tools.geo_tools import get_nearest_profiles, ocean_basin_bounds
 from backend.tools.stats_tools import calculate_statistics, detect_anomalies
 
@@ -24,13 +31,20 @@ MANDATORY: You MUST use your tools to answer data questions. NEVER respond with 
 
 Available variables: TEMP (temperature, degC), PSAL (salinity, PSU), PRES (pressure, dbar), DOXY (dissolved oxygen, umol/kg)
 
-You have these tools:
+REGION-BASED TOOLS:
 - query_ocean_data: Fetch Argo profiles by variable, location, depth, time
 - ocean_basin_bounds: Get lat/lon bounds for named ocean basins
 - get_data_coverage: Return dataset coverage information
 - calculate_statistics: Compute detailed statistics on a dataset
 - detect_anomalies: Find outlier values in data
 - get_nearest_profiles: Find profiles near a coordinate
+
+FLOAT-SPECIFIC TOOLS:
+- query_by_float_id: Get all profiles from a float by WMO ID (includes trajectory + stats)
+- get_float_trajectory: Get ordered lat/lon/time path for map plotting
+- get_floats_in_region: List unique float WMO IDs in a geographic region
+- query_by_profile: Get a single depth profile from a float by WMO ID and cycle number
+- compare_floats: Compare statistics across 2-5 floats for a variable
 
 PERFORMANCE RULES (CRITICAL for fast queries):
 1. TIME RANGE: ALWAYS specify start_date and end_date. If the user doesn't mention dates, default to the last 3 months (e.g., start_date="2025-11-01", end_date="2026-02-01").
@@ -43,6 +57,11 @@ Example workflows:
 2. "Compare Pacific vs Atlantic salinity" -> ocean_basin_bounds("north_pacific") -> query_ocean_data for N. Pacific -> ocean_basin_bounds("north_atlantic") -> query_ocean_data for N. Atlantic -> summarize both
 3. "Data near Hawaii" -> get_nearest_profiles(lat=21.3, lon=-157.8)
 4. "Mediterranean temperature" -> ocean_basin_bounds("mediterranean") -> query_ocean_data(variable="TEMP", start_date="2025-11-17", end_date="2026-02-17", ...)
+5. "Show me float 6902746" -> query_by_float_id(wmo_id=6902746)
+6. "Plot trajectory of float 6902746" -> get_float_trajectory(wmo_id=6902746)
+7. "What floats are in Mediterranean?" -> ocean_basin_bounds("mediterranean") -> get_floats_in_region(lat_min=..., lat_max=..., lon_min=..., lon_max=...)
+8. "Cycle 10 of float 6902746" -> query_by_profile(wmo_id=6902746, cycle_number=10, variable="TEMP")
+9. "Compare floats 6902746 and 6902747" -> compare_floats(wmo_ids=[6902746, 6902747], variable="TEMP")
 
 FORMATTING: Write clean natural language for the end user. Never expose XML tags, tool names, or raw data structures.
 """
@@ -54,6 +73,11 @@ QUERY_TOOLS = [
     detect_anomalies,
     get_nearest_profiles,
     ocean_basin_bounds,
+    query_by_float_id,
+    get_float_trajectory,
+    get_floats_in_region,
+    query_by_profile,
+    compare_floats,
 ]
 
 
